@@ -11,7 +11,13 @@ from psycopg_pool import AsyncConnectionPool
 
 from src.config import get_settings
 from src.graph.graph import build_graph
-from src.services.whatsapp import close_http_client, extract_message, parse_message_content
+from src.services.whatsapp import (
+    close_http_client,
+    extract_message,
+    parse_message_content,
+    send_buttons,
+    send_text,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -121,8 +127,37 @@ async def _process_message(app: FastAPI, wa_id: str, text: str) -> None:
                     },
                     config=config,
                 )
+
+        # Check if graph paused at an interrupt — send the interrupt value to user
+        updated_state = await graph.aget_state(config)
+        if updated_state.next and updated_state.tasks:
+            for task in updated_state.tasks:
+                if hasattr(task, "interrupts") and task.interrupts:
+                    for intr in task.interrupts:
+                        await _send_interrupt_message(wa_id, intr.value)
+
     except Exception:
         logger.exception("Error processing message from %s", wa_id)
+
+
+async def _send_interrupt_message(wa_id: str, value: str) -> None:
+    """Send an interrupt value as a WhatsApp message.
+
+    If the value looks like a listing confirmation (has structured fields),
+    send with confirm/edit buttons. Otherwise send as plain text.
+    """
+    # Listing confirmation — contains formatted fields like "Rent:" and "Rooms:"
+    if "Rent:" in value and "Rooms:" in value:
+        await send_buttons(
+            wa_id,
+            value,
+            [
+                {"id": "action_confirm", "title": "Looks good"},
+                {"id": "action_edit", "title": "Edit"},
+            ],
+        )
+    else:
+        await send_text(wa_id, value)
 
 
 @app.get("/health")

@@ -28,7 +28,8 @@ async def classify_intent(state: dict, config: dict) -> Command:
         "list_place": "extract_listing",
         "search_place": "search_and_match",
         "opt_in_response": "handle_opt_in",
-        "greeting": "onboard_user",
+        "update_listing": "extract_listing",
+        "onboard": "onboard_user",
         "help": "respond_help",
         "unknown": "respond_unknown",
     }

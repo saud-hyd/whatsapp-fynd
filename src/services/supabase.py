@@ -82,3 +82,80 @@ async def find_matches(
         limit,
     )
     return [dict(r) for r in rows]
+
+
+async def create_match(
+    conn: asyncpg.Connection,
+    listing_id: str,
+    seeker_id: str,
+    lister_id: str,
+    similarity: float,
+    seeker_status: str = "accepted",
+) -> dict:
+    """Create a match record. Seeker has already expressed interest."""
+    row = await conn.fetchrow(
+        """INSERT INTO matches (listing_id, seeker_id, lister_id, similarity, seeker_status)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING id, listing_id, seeker_id, lister_id, seeker_status, lister_status""",
+        listing_id,
+        seeker_id,
+        lister_id,
+        similarity,
+        seeker_status,
+    )
+    return dict(row)
+
+
+async def get_match_by_id(conn: asyncpg.Connection, match_id: str) -> dict | None:
+    """Look up a match by ID with listing and user details."""
+    row = await conn.fetchrow(
+        """SELECT m.*,
+                  l.summary as listing_summary, l.city, l.neighborhood,
+                  l.rent_amount, l.rooms,
+                  seeker.wa_id as seeker_wa_id, seeker.name as seeker_name,
+                  lister.wa_id as lister_wa_id, lister.name as lister_name
+           FROM matches m
+           JOIN listings l ON m.listing_id = l.id
+           JOIN users seeker ON m.seeker_id = seeker.id
+           JOIN users lister ON m.lister_id = lister.id
+           WHERE m.id = $1""",
+        match_id,
+    )
+    return dict(row) if row else None
+
+
+async def update_match_status(
+    conn: asyncpg.Connection,
+    match_id: str,
+    role: str,
+    status: str,
+) -> None:
+    """Update match status for a specific role (seeker or lister)."""
+    if role == "seeker":
+        await conn.execute(
+            "UPDATE matches SET seeker_status = $1 WHERE id = $2",
+            status,
+            match_id,
+        )
+    else:
+        await conn.execute(
+            "UPDATE matches SET lister_status = $1 WHERE id = $2",
+            status,
+            match_id,
+        )
+
+
+async def get_pending_matches_for_user(conn: asyncpg.Connection, user_id: str) -> list[dict]:
+    """Get pending matches where this user hasn't responded yet."""
+    rows = await conn.fetch(
+        """SELECT m.id, m.listing_id, m.seeker_id, m.lister_id,
+                  m.seeker_status, m.lister_status, m.similarity,
+                  l.summary as listing_summary
+           FROM matches m
+           JOIN listings l ON m.listing_id = l.id
+           WHERE (m.lister_id = $1 AND m.lister_status = 'pending')
+              OR (m.seeker_id = $1 AND m.seeker_status = 'pending')
+           ORDER BY m.created_at DESC""",
+        user_id,
+    )
+    return [dict(r) for r in rows]

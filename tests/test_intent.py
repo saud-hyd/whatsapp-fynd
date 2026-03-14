@@ -32,9 +32,9 @@ class TestClassifiedIntent:
 
     def test_confidence_must_be_between_0_and_1(self):
         with pytest.raises(ValidationError):
-            ClassifiedIntent(intent="greeting", confidence=1.5)
+            ClassifiedIntent(intent="onboard", confidence=1.5)
         with pytest.raises(ValidationError):
-            ClassifiedIntent(intent="greeting", confidence=-0.1)
+            ClassifiedIntent(intent="onboard", confidence=-0.1)
 
     def test_confidence_boundary_values(self):
         assert ClassifiedIntent(intent="help", confidence=0.0).confidence == 0.0

@@ -25,6 +25,9 @@ class FyndState(TypedDict):
     # Match results
     match_results: list | None
 
+    # Current match index for one-at-a-time display
+    current_match_index: int
+
     # Response to send back via WhatsApp
     response_type: str  # 'text' | 'interactive_buttons' | 'interactive_list'
     response_payload: dict

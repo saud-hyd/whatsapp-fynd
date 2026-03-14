@@ -2,8 +2,11 @@
 
 from langgraph.graph import END, START, StateGraph
 
+from src.graph.nodes.ask_search_info import ask_search_info
 from src.graph.nodes.classify_intent import classify_intent
+from src.graph.nodes.confirm_listing import confirm_listing
 from src.graph.nodes.extract_listing import extract_listing
+from src.graph.nodes.follow_up import follow_up
 from src.graph.nodes.handle_opt_in import handle_opt_in
 from src.graph.nodes.identify_user import identify_user
 from src.graph.nodes.onboard_user import onboard_user
@@ -22,7 +25,7 @@ def build_graph(checkpointer, store):
     """
     builder = StateGraph(FyndState)
 
-    # Add nodes
+    # Core flow
     builder.add_node("identify_user", identify_user)
     builder.add_node("classify_intent", classify_intent)
     builder.add_node("onboard_user", onboard_user)
@@ -30,15 +33,19 @@ def build_graph(checkpointer, store):
     builder.add_node("respond_unknown", respond_unknown)
     builder.add_node("respond", respond)
 
-    # Phase 3 stubs (will be fully implemented later)
+    # Listing flow: extract → follow_up (loop) → confirm → respond
     builder.add_node("extract_listing", extract_listing)
-    builder.add_node("search_and_match", search_and_match)
-    # builder.add_node("follow_up", follow_up)
+    builder.add_node("follow_up", follow_up)
+    builder.add_node("confirm_listing", confirm_listing)
 
-    # Phase 4 stub
+    # Search flow: search → ask_search_info (loop) → respond
+    builder.add_node("search_and_match", search_and_match)
+    builder.add_node("ask_search_info", ask_search_info)
+
+    # Opt-in flow
     builder.add_node("handle_opt_in", handle_opt_in)
 
-    # Explicit edges (routing between nodes is handled by Command(goto=...))
+    # Explicit edges
     builder.add_edge(START, "identify_user")
     builder.add_edge("respond", END)
 
