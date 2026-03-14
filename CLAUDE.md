@@ -70,24 +70,19 @@ src/
 
 ### Branching Strategy
 - **`main`** — production-ready code only. Never commit directly.
-- **`dev`** — integration branch. All feature branches merge here first.
+- **`dev`** — integration branch. Feature branches merge here via direct merge (no PRs — solo developer).
 - **Feature branches** — `feature/<name>` (e.g., `feature/webhook-setup`, `feature/langgraph-core`)
 - **Bugfix branches** — `fix/<name>`
-- **Flow**: `feature/*` → PR to `dev` → PR to `main` (after thorough testing)
+- **Flow**: `feature/*` → merge to `dev` → merge to `main` (after thorough testing)
 
 ### Commit Rules
 - **NEVER commit without testing first.** Run all relevant tests and verify functionality before any commit.
-- **NEVER commit to `main` or `dev` directly.** Always use feature branches + PRs.
+- **NEVER commit to `main` directly.** Use feature branches → merge to `dev`.
 - Write clear, concise commit messages: imperative mood, explain "why" not "what"
 - One logical change per commit — don't bundle unrelated changes
 - Never commit secrets, `.env` files, or credentials
 - Never commit broken code. If tests fail, fix before committing.
 - Run `ruff check` and `ruff format --check` before every commit
-
-### PR Rules
-- PRs require passing tests before merge
-- Keep PRs focused — one feature or fix per PR
-- Include a summary of changes and test plan in PR description
 
 ### Testing Before Commit Checklist
 1. `ruff check src/` — no lint errors

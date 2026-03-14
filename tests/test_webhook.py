@@ -1,15 +1,18 @@
 """Tests for FastAPI webhook endpoints."""
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from fastapi.testclient import TestClient
 
 
 @pytest.fixture
 def client():
-    """Create a test client."""
+    """Create a test client with _process_message mocked out (no DB/graph needed)."""
     from src.main import app
 
-    return TestClient(app)
+    with patch("src.main._process_message", new_callable=AsyncMock):
+        yield TestClient(app)
 
 
 class TestWebhookVerification:
