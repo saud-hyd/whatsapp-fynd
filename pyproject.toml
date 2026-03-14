@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "whatsapp-fynd"
+version = "0.1.0"
+description = "WhatsApp DM bot for accommodation matching using AI-powered semantic search"
+requires-python = ">=3.12"
+
+dependencies = [
+    # Web framework
+    "fastapi>=0.115",
+    "uvicorn>=0.34",
+
+    # LangGraph + LangChain
+    "langgraph>=1.0",
+    "langgraph-checkpoint-postgres>=2.0",
+    "langchain-google-genai>=2.0",
+
+    # Google AI
+    "google-genai>=1.0",
+
+    # Database
+    "supabase>=2.0",
+    "asyncpg>=0.30",
+    "pgvector>=0.3",
+
+    # HTTP client
+    "httpx>=0.28",
+
+    # Utilities
+    "pydantic>=2.10",
+    "pydantic-settings>=2.7",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
