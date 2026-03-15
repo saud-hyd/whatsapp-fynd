@@ -2,12 +2,13 @@
 
 import logging
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command, interrupt
 
 logger = logging.getLogger(__name__)
 
 
-async def ask_search_info(state: dict, config: dict) -> Command:
+async def ask_search_info(state: dict, config: RunnableConfig) -> Command:
     """Send the question (already in response_payload) and wait for answer via interrupt."""
     question = state.get("response_payload", {}).get("body", "Could you tell me more?")
 

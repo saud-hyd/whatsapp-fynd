@@ -3,6 +3,7 @@
 import logging
 
 from langchain_core.messages import SystemMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 
 from src.graph.prompts import INTENT_CLASSIFICATION
@@ -12,7 +13,7 @@ from src.services.gemini import get_llm
 logger = logging.getLogger(__name__)
 
 
-async def classify_intent(state: dict, config: dict) -> Command:
+async def classify_intent(state: dict, config: RunnableConfig) -> Command:
     """Classify the user's intent and route to the appropriate node."""
     llm = get_llm()
     classifier = llm.with_structured_output(ClassifiedIntent)

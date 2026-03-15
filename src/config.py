@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     wa_verify_token: str
     wa_access_token: str
     wa_phone_number_id: str
+    wa_app_secret: str = ""  # For webhook signature verification (required in production)
 
     # Google AI (Gemini)
     google_api_key: str

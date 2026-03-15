@@ -1,6 +1,9 @@
-"""Tests for WhatsApp message parsing utilities."""
+"""Tests for WhatsApp message parsing and security utilities."""
 
-from src.services.whatsapp import extract_message, parse_message_content
+import hashlib
+import hmac
+
+from src.services.whatsapp import extract_message, parse_message_content, verify_webhook_signature
 
 
 class TestExtractMessage:
@@ -77,3 +80,30 @@ class TestParseMessageContent:
         text, msg_type = parse_message_content(message)
         assert text == ""
         assert msg_type == "unknown"
+
+
+class TestWebhookSignatureVerification:
+    def test_valid_signature(self):
+        payload = b'{"test": "data"}'
+        secret = "my_app_secret"
+        expected_hash = hmac.HMAC(secret.encode(), payload, hashlib.sha256).hexdigest()
+        signature = f"sha256={expected_hash}"
+
+        assert verify_webhook_signature(payload, signature, secret) is True
+
+    def test_invalid_signature(self):
+        payload = b'{"test": "data"}'
+        assert verify_webhook_signature(payload, "sha256=invalid", "secret") is False
+
+    def test_empty_signature(self):
+        payload = b'{"test": "data"}'
+        assert verify_webhook_signature(payload, "", "secret") is False
+
+    def test_tampered_payload(self):
+        payload = b'{"test": "data"}'
+        secret = "my_app_secret"
+        expected_hash = hmac.HMAC(secret.encode(), payload, hashlib.sha256).hexdigest()
+        signature = f"sha256={expected_hash}"
+
+        tampered = b'{"test": "hacked"}'
+        assert verify_webhook_signature(tampered, signature, secret) is False

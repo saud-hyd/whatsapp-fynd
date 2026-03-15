@@ -1,6 +1,8 @@
+import json
 import logging
 from contextlib import asynccontextmanager
 
+import asyncpg
 from fastapi import BackgroundTasks, FastAPI, Query, Request
 from fastapi.responses import PlainTextResponse
 from langchain_core.messages import HumanMessage
@@ -17,6 +19,7 @@ from src.services.whatsapp import (
     parse_message_content,
     send_buttons,
     send_text,
+    verify_webhook_signature,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -32,28 +35,45 @@ async def lifespan(app: FastAPI):
     """Manage app startup and shutdown — initialize LangGraph components."""
     settings = get_settings()
 
-    # Shared connection pool for checkpointer + store
-    pool = AsyncConnectionPool(conninfo=settings.database_url)
-    await pool.open()
+    # psycopg pool for LangGraph checkpointer + store (requires psycopg3)
+    psycopg_pool = AsyncConnectionPool(conninfo=settings.database_url)
+    await psycopg_pool.open()
+
+    # asyncpg pool for application queries (supabase.py, notifications.py)
+    asyncpg_pool = await asyncpg.create_pool(settings.database_url)
+
+    # Register pgvector type for asyncpg
+    async with asyncpg_pool.acquire() as conn:
+        await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        # Register vector type codec
+        await conn.set_type_codec(
+            "vector",
+            encoder=lambda v: v,
+            decoder=lambda v: v,
+            schema="public",
+            format="text",
+        )
 
     # LangGraph checkpointer (conversation state)
-    checkpointer = AsyncPostgresSaver(pool)
+    checkpointer = AsyncPostgresSaver(psycopg_pool)
     await checkpointer.setup()
 
     # LangGraph store (long-term memory)
-    store = AsyncPostgresStore(pool)
+    store = AsyncPostgresStore(psycopg_pool)
     await store.setup()
 
     # Build and store the compiled graph
     app.state.graph = build_graph(checkpointer, store)
-    app.state.pool = pool
+    app.state.psycopg_pool = psycopg_pool
+    app.state.asyncpg_pool = asyncpg_pool
 
     logger.info("LangGraph initialized — checkpointer + store ready")
 
     yield
 
     await close_http_client()
-    await pool.close()
+    await asyncpg_pool.close()
+    await psycopg_pool.close()
 
 
 app = FastAPI(title="WhatsApp Fynd", version="0.1.0", lifespan=lifespan)
@@ -76,7 +96,19 @@ async def verify_webhook(
 @app.post("/webhook")
 async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
     """Handle incoming WhatsApp messages — return 200 immediately, process async."""
-    body = await request.json()
+    settings = get_settings()
+
+    # Verify webhook signature in production
+    if settings.wa_app_secret:
+        signature = request.headers.get("X-Hub-Signature-256", "")
+        raw_body = await request.body()
+        if not verify_webhook_signature(raw_body, signature, settings.wa_app_secret):
+            logger.warning("Invalid webhook signature")
+            return PlainTextResponse(content="Invalid signature", status_code=403)
+        body = json.loads(raw_body)
+    else:
+        body = await request.json()
+
     message = extract_message(body)
     if not message:
         return {"status": "ok"}
@@ -103,7 +135,7 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
 async def _process_message(app: FastAPI, wa_id: str, text: str) -> None:
     """Process a message through the LangGraph state graph."""
     graph = app.state.graph
-    pool = app.state.pool
+    asyncpg_pool = app.state.asyncpg_pool
 
     config = {"configurable": {"thread_id": f"wa_{wa_id}"}}
 
@@ -111,9 +143,8 @@ async def _process_message(app: FastAPI, wa_id: str, text: str) -> None:
         # Check if there's a pending interrupt (e.g., follow-up questions)
         state = await graph.aget_state(config)
 
-        async with pool.connection() as conn:
-            raw_conn = await conn.connection
-            config["configurable"]["conn"] = raw_conn
+        async with asyncpg_pool.acquire() as conn:
+            config["configurable"]["conn"] = conn
 
             if state.next:
                 # Resume from interrupt with the user's reply

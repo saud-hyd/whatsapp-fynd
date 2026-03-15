@@ -1,3 +1,6 @@
+import hashlib
+import hmac
+
 import httpx
 
 from src.config import get_settings
@@ -75,6 +78,43 @@ async def send_list(to: str, body: str, button_text: str, sections: list[dict]) 
         },
     }
     return await _send(data)
+
+
+async def send_template(
+    to: str,
+    template_name: str,
+    language_code: str = "en",
+    components: list[dict] | None = None,
+) -> dict:
+    """Send a template message (business-initiated, costs ~€0.046 for utility in DE).
+
+    Used for the "one knock" strategy — reaching users outside the 24h window.
+    Templates must be pre-approved in Meta Business Manager.
+    """
+    template = {
+        "name": template_name,
+        "language": {"code": language_code},
+    }
+    if components:
+        template["components"] = components
+
+    data = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": "template",
+        "template": template,
+    }
+    return await _send(data)
+
+
+def verify_webhook_signature(payload: bytes, signature: str, app_secret: str) -> bool:
+    """Verify WhatsApp webhook signature (X-Hub-Signature-256).
+
+    Returns True if the signature is valid.
+    """
+    expected = hmac.HMAC(app_secret.encode(), payload, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(f"sha256={expected}", signature)
 
 
 def extract_message(body: dict) -> dict | None:

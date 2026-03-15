@@ -2,12 +2,14 @@
 
 import logging
 
+from langchain_core.runnables import RunnableConfig
+
 from src.services.whatsapp import send_buttons, send_list, send_text
 
 logger = logging.getLogger(__name__)
 
 
-async def respond(state: dict, config: dict) -> dict:
+async def respond(state: dict, config: RunnableConfig) -> dict:
     """Send the response message via WhatsApp."""
     wa_id = state["wa_id"]
     response_type = state.get("response_type", "text")

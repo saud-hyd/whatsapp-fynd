@@ -2,15 +2,16 @@
 
 import logging
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 
+from src.services.notifications import deliver_or_queue
 from src.services.supabase import create_match, get_match_by_id, update_match_status
-from src.services.whatsapp import send_buttons, send_text
 
 logger = logging.getLogger(__name__)
 
 
-async def handle_opt_in(state: dict, config: dict) -> Command:
+async def handle_opt_in(state: dict, config: RunnableConfig) -> Command:
     """Handle match-related button responses: interested, next, accept, reject."""
     conn = config["configurable"]["conn"]
     last_message = state["messages"][-1].content if state["messages"] else ""
@@ -88,29 +89,34 @@ async def _handle_seeker_interested(state: dict, conn, last_message: str) -> Com
 
     logger.info("Match created: %s", match_record["id"])
 
-    # Notify the lister via WhatsApp
+    # Notify the lister — deliver immediately if in 24h window, else queue
     lister_wa_id = listing.get("wa_id", listing.get("lister_wa_id", ""))
+    lister_id = str(listing["user_id"])
+
     if lister_wa_id:
         seeker_intro = prefs.get("seeker_intro", "")
         intro_text = f"\n\nAbout them: {seeker_intro}" if seeker_intro else ""
 
-        notification_body = (
-            f"Someone is interested in your listing: {listing.get('summary', 'your place')}!"
-            f"{intro_text}"
-            f"\n\nWould you like to connect?"
-        )
+        notification_payload = {
+            "body": (
+                f"Someone is interested in your listing: "
+                f"{listing.get('summary', 'your place')}!"
+                f"{intro_text}"
+                f"\n\nWould you like to connect?"
+            ),
+            "buttons": [
+                {"id": f"opt_accept_{match_record['id']}", "title": "Accept"},
+                {"id": f"opt_reject_{match_record['id']}", "title": "Decline"},
+            ],
+        }
 
-        try:
-            await send_buttons(
-                lister_wa_id,
-                notification_body,
-                [
-                    {"id": f"opt_accept_{match_record['id']}", "title": "Accept"},
-                    {"id": f"opt_reject_{match_record['id']}", "title": "Decline"},
-                ],
-            )
-        except Exception:
-            logger.exception("Failed to notify lister %s", lister_wa_id)
+        sent = await deliver_or_queue(
+            conn, lister_id, lister_wa_id, "match_interest", notification_payload
+        )
+        if sent:
+            logger.info("Lister %s notified immediately (in 24h window)", lister_wa_id)
+        else:
+            logger.info("Notification queued for lister %s (outside 24h window)", lister_wa_id)
 
     return Command(
         goto="respond",
@@ -213,23 +219,25 @@ async def _handle_lister_response(state: dict, conn, match_id: str, status: str)
     if match["seeker_status"] == "accepted" and status == "accepted":
         # Both accepted — share contact info
         seeker_wa = match["seeker_wa_id"]
+        seeker_id = str(match["seeker_id"])
         lister_wa = match["lister_wa_id"]
         seeker_name = match.get("seeker_name") or "the seeker"
         lister_name = match.get("lister_name") or "the lister"
         listing_summary = match.get("listing_summary", "the listing")
 
-        # Notify seeker
-        try:
-            await send_text(
-                seeker_wa,
-                f"Great news! {lister_name} wants to connect with you about: {listing_summary}\n\n"
+        # Notify seeker — use deliver_or_queue (they may be offline)
+        seeker_payload = {
+            "body": (
+                f"Great news! {lister_name} wants to connect with you "
+                f"about: {listing_summary}\n\n"
                 f"Their WhatsApp: wa.me/{lister_wa}\n\n"
-                "Go ahead and reach out!",
-            )
-        except Exception:
-            logger.exception("Failed to notify seeker %s", seeker_wa)
+                "Go ahead and reach out!"
+            ),
+        }
 
-        # Tell lister
+        await deliver_or_queue(conn, seeker_id, seeker_wa, "mutual_match", seeker_payload)
+
+        # Tell lister (they're in-session right now, no need to queue)
         return Command(
             goto="respond",
             update={

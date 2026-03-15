@@ -12,6 +12,7 @@ def _set_env(monkeypatch):
     monkeypatch.setenv("WA_VERIFY_TOKEN", "test_verify_token")
     monkeypatch.setenv("WA_ACCESS_TOKEN", "test_access_token")
     monkeypatch.setenv("WA_PHONE_NUMBER_ID", "123456789")
+    monkeypatch.setenv("WA_APP_SECRET", "")
     monkeypatch.setenv("GOOGLE_API_KEY", "test_google_key")
     monkeypatch.setenv("SUPABASE_URL", "https://test.supabase.co")
     monkeypatch.setenv("SUPABASE_ANON_KEY", "test_anon_key")

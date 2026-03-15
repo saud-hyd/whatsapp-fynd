@@ -1,10 +1,19 @@
 import asyncpg
 
 
+def _format_vector(embedding: list[float] | str | None) -> str | None:
+    """Format embedding as pgvector text representation: '[0.1,0.2,...]'."""
+    if embedding is None:
+        return None
+    if isinstance(embedding, str):
+        return embedding
+    return "[" + ",".join(str(v) for v in embedding) + "]"
+
+
 async def get_user_by_wa_id(conn: asyncpg.Connection, wa_id: str) -> dict | None:
     """Look up a user by WhatsApp ID."""
     row = await conn.fetchrow(
-        "SELECT id, wa_id, name, role, city FROM users WHERE wa_id = $1",
+        "SELECT id, wa_id, name, role, city, last_active_at FROM users WHERE wa_id = $1",
         wa_id,
     )
     return dict(row) if row else None
@@ -25,7 +34,7 @@ async def create_user(conn: asyncpg.Connection, wa_id: str, name: str | None = N
 async def update_user_role(conn: asyncpg.Connection, user_id: str, role: str) -> None:
     """Update a user's role."""
     await conn.execute(
-        "UPDATE users SET role = $1 WHERE id = $2",
+        "UPDATE users SET role = $1 WHERE id = $2::uuid",
         role,
         user_id,
     )
@@ -37,7 +46,7 @@ async def insert_listing(conn: asyncpg.Connection, listing_data: dict) -> dict:
         """INSERT INTO listings (
                user_id, raw_text, city, neighborhood, rent_amount, rooms,
                available_from, available_to, listing_type, amenities, summary, embedding
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+           ) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::vector)
            RETURNING id""",
         listing_data["user_id"],
         listing_data["raw_text"],
@@ -50,7 +59,7 @@ async def insert_listing(conn: asyncpg.Connection, listing_data: dict) -> dict:
         listing_data.get("listing_type"),
         listing_data.get("amenities"),
         listing_data.get("summary"),
-        listing_data.get("embedding"),
+        _format_vector(listing_data.get("embedding")),
     )
     return dict(row)
 
@@ -75,7 +84,7 @@ async def find_matches(
              AND ($4::numeric IS NULL OR l.rooms >= $4)
            ORDER BY l.embedding <=> $1::vector
            LIMIT $5""",
-        str(embedding),
+        _format_vector(embedding),
         city,
         max_rent,
         min_rooms,
@@ -92,10 +101,16 @@ async def create_match(
     similarity: float,
     seeker_status: str = "accepted",
 ) -> dict:
-    """Create a match record. Seeker has already expressed interest."""
+    """Create a match record. Seeker has already expressed interest.
+
+    Uses ON CONFLICT to prevent duplicate matches for the same listing+seeker.
+    """
     row = await conn.fetchrow(
         """INSERT INTO matches (listing_id, seeker_id, lister_id, similarity, seeker_status)
-           VALUES ($1, $2, $3, $4, $5)
+           VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5)
+           ON CONFLICT (listing_id, seeker_id) DO UPDATE SET
+               seeker_status = EXCLUDED.seeker_status,
+               updated_at = now()
            RETURNING id, listing_id, seeker_id, lister_id, seeker_status, lister_status""",
         listing_id,
         seeker_id,
@@ -118,7 +133,7 @@ async def get_match_by_id(conn: asyncpg.Connection, match_id: str) -> dict | Non
            JOIN listings l ON m.listing_id = l.id
            JOIN users seeker ON m.seeker_id = seeker.id
            JOIN users lister ON m.lister_id = lister.id
-           WHERE m.id = $1""",
+           WHERE m.id = $1::uuid""",
         match_id,
     )
     return dict(row) if row else None
@@ -133,13 +148,13 @@ async def update_match_status(
     """Update match status for a specific role (seeker or lister)."""
     if role == "seeker":
         await conn.execute(
-            "UPDATE matches SET seeker_status = $1 WHERE id = $2",
+            "UPDATE matches SET seeker_status = $1 WHERE id = $2::uuid",
             status,
             match_id,
         )
     else:
         await conn.execute(
-            "UPDATE matches SET lister_status = $1 WHERE id = $2",
+            "UPDATE matches SET lister_status = $1 WHERE id = $2::uuid",
             status,
             match_id,
         )
@@ -153,8 +168,8 @@ async def get_pending_matches_for_user(conn: asyncpg.Connection, user_id: str) -
                   l.summary as listing_summary
            FROM matches m
            JOIN listings l ON m.listing_id = l.id
-           WHERE (m.lister_id = $1 AND m.lister_status = 'pending')
-              OR (m.seeker_id = $1 AND m.seeker_status = 'pending')
+           WHERE (m.lister_id = $1::uuid AND m.lister_status = 'pending')
+              OR (m.seeker_id = $1::uuid AND m.seeker_status = 'pending')
            ORDER BY m.created_at DESC""",
         user_id,
     )

@@ -3,6 +3,7 @@
 import logging
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 
 from src.graph.prompts import MATCH_REASON, SEARCH_EXTRACTION
@@ -14,7 +15,7 @@ from src.services.supabase import find_matches, update_user_role
 logger = logging.getLogger(__name__)
 
 
-async def search_and_match(state: dict, config: dict) -> Command:
+async def search_and_match(state: dict, config: RunnableConfig) -> Command:
     """Extract seeker preferences, search for matches, present one at a time."""
     llm = get_llm()
     conn = config["configurable"]["conn"]

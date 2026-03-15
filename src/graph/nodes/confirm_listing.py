@@ -2,6 +2,7 @@
 
 import logging
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command, interrupt
 
 from src.models.listing import ExtractedListing
@@ -11,7 +12,7 @@ from src.services.supabase import insert_listing, update_user_role
 logger = logging.getLogger(__name__)
 
 
-async def confirm_listing(state: dict, config: dict) -> Command:
+async def confirm_listing(state: dict, config: RunnableConfig) -> Command:
     """Show listing confirmation and wait for user decision."""
     conn = config["configurable"]["conn"]
     listing = ExtractedListing(**state["extracted_listing"])
@@ -33,7 +34,7 @@ async def confirm_listing(state: dict, config: dict) -> Command:
         listing_data = {
             "user_id": state["user_id"],
             "raw_text": raw_text,
-            "embedding": str(embedding),
+            "embedding": embedding,
             **listing.model_dump(exclude={"summary"}),
             "summary": listing.summary,
         }

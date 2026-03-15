@@ -3,6 +3,7 @@
 import logging
 
 from langchain_core.messages import SystemMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command, interrupt
 
 from src.graph.prompts import FOLLOW_UP_FIELD
@@ -19,7 +20,7 @@ FIELD_LABELS = {
 }
 
 
-async def follow_up(state: dict, config: dict) -> Command:
+async def follow_up(state: dict, config: RunnableConfig) -> Command:
     """Ask for the first missing required field, then route back to extract_listing."""
     listing = ExtractedListing(**state["extracted_listing"])
     missing = listing.missing_required_fields()

@@ -3,6 +3,7 @@
 import logging
 
 from langchain_core.messages import SystemMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 
 from src.graph.prompts import LISTING_EXTRACTION
@@ -12,7 +13,7 @@ from src.services.gemini import get_llm
 logger = logging.getLogger(__name__)
 
 
-async def extract_listing(state: dict, config: dict) -> Command:
+async def extract_listing(state: dict, config: RunnableConfig) -> Command:
     """Extract listing fields from conversation. Routes to follow_up or confirm_listing."""
     llm = get_llm()
     extractor = llm.with_structured_output(ExtractedListing)
