@@ -24,7 +24,7 @@ async def extract_listing(state: dict, config: RunnableConfig) -> Command:
     existing = state.get("extracted_listing")
     if existing:
         merged = ExtractedListing(**existing)
-        for field_name in result.model_fields:
+        for field_name in type(result).model_fields:
             new_val = getattr(result, field_name)
             if new_val is not None and new_val != [] and new_val != "":
                 setattr(merged, field_name, new_val)
