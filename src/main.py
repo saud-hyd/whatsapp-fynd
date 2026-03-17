@@ -3,6 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 
 import asyncpg
+import psycopg
 from fastapi import BackgroundTasks, FastAPI, Query, Request
 from fastapi.responses import PlainTextResponse
 from langchain_core.messages import HumanMessage
@@ -35,17 +36,37 @@ async def lifespan(app: FastAPI):
     """Manage app startup and shutdown — initialize LangGraph components."""
     settings = get_settings()
 
-    # psycopg pool for LangGraph checkpointer + store (requires psycopg3)
-    psycopg_pool = AsyncConnectionPool(conninfo=settings.database_url)
+    # Step 1: Run LangGraph table setup with autocommit=True
+    # (required for CREATE INDEX CONCURRENTLY in migrations)
+    async with await psycopg.AsyncConnection.connect(
+        settings.database_url, autocommit=True
+    ) as setup_conn:
+        setup_checkpointer = AsyncPostgresSaver(setup_conn)
+        await setup_checkpointer.setup()
+        setup_store = AsyncPostgresStore(setup_conn)
+        await setup_store.setup()
+        logger.info("LangGraph tables set up (autocommit)")
+
+    # Step 2: psycopg pool for LangGraph runtime (checkpointer + store)
+    # check=connection health check before returning to caller (handles Supabase idle drops)
+    psycopg_pool = AsyncConnectionPool(
+        conninfo=settings.database_url,
+        open=False,
+        min_size=1,
+        max_size=10,
+        check=AsyncConnectionPool.check_connection,
+    )
     await psycopg_pool.open()
 
-    # asyncpg pool for application queries (supabase.py, notifications.py)
+    checkpointer = AsyncPostgresSaver(psycopg_pool)
+    store = AsyncPostgresStore(psycopg_pool)
+
+    # Step 3: asyncpg pool for application queries (supabase.py, notifications.py)
     asyncpg_pool = await asyncpg.create_pool(settings.database_url)
 
     # Register pgvector type for asyncpg
     async with asyncpg_pool.acquire() as conn:
         await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
-        # Register vector type codec
         await conn.set_type_codec(
             "vector",
             encoder=lambda v: v,
@@ -53,14 +74,6 @@ async def lifespan(app: FastAPI):
             schema="public",
             format="text",
         )
-
-    # LangGraph checkpointer (conversation state)
-    checkpointer = AsyncPostgresSaver(psycopg_pool)
-    await checkpointer.setup()
-
-    # LangGraph store (long-term memory)
-    store = AsyncPostgresStore(psycopg_pool)
-    await store.setup()
 
     # Build and store the compiled graph
     app.state.graph = build_graph(checkpointer, store)
